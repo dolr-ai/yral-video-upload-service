@@ -4,40 +4,23 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+  outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
-        
-        # Read rust-toolchain.toml to get the Rust version
-        rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-        
+        pkgs = import nixpkgs { inherit system; };
       in
       {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            rustToolchain
-            cargo-watch
-            cargo-edit
-            rust-analyzer
-            
-            # Additional dependencies
+            rustup
             pkg-config
             openssl
           ];
 
           shellHook = ''
             echo "Rust development environment loaded"
-            echo "Rust version: $(rustc --version)"
           '';
         };
       }
