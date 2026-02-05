@@ -15,7 +15,7 @@ use crate::{
     app_state::AppState,
     utils::{
         events_interface::EventService,
-        notification_client,
+        notification_client::{self, NotificationClient, NotificationType},
         storj_interface::StorjInterface,
         types::{ApiResponse, DelegatedIdentityWire, RequestPostDetails},
     },
@@ -29,10 +29,11 @@ pub async fn update_video_metadata(
 ) -> ApiResponse<()> {
     //TODO: send event
     //TODO: send notification
-    match update_metadata_impl_v2(
+    match update_metadata_impl(
         &app_state.ic_admin_agent,
         &app_state.storj_client,
         &app_state.events_service,
+        &app_state.notification_client,
         req,
     )
     .await
@@ -60,10 +61,11 @@ pub struct UpdateMetadataRequest {
     pub post_details: PostDetailsFromFrontendV1,
 }
 
-async fn update_metadata_impl_v2(
+async fn update_metadata_impl(
     ic_admin_agent: &ic_agent::Agent,
     storj_interface: &StorjInterface,
     events_service: &EventService,
+    notification_client: &NotificationClient,
     mut req_data: UpdateMetadataRequest,
 ) -> Result<(), Box<dyn Error>> {
     let delegated_identity = DelegatedIdentity::try_from(req_data.delegated_identity_wire.clone())?;
@@ -71,6 +73,10 @@ async fn update_metadata_impl_v2(
     //TODO: we not using delegated identity for storj upload or canister upload we could get away with a signature that is signed by this Delegated Identity.
 
     let publisher_user_id = delegated_identity.sender()?.to_text();
+
+    if !publisher_user_id.eq(&req_data.post_details.creator_principal.to_text()) {
+        return Err("Publisher user id does not match creator principal in post details".into());
+    }
 
     req_data.meta.insert(
         POST_DETAILS_KEY.to_string(),
@@ -92,12 +98,10 @@ async fn update_metadata_impl_v2(
     upload_video_canister(
         ic_admin_agent,
         events_service,
+        notification_client,
         req_data.post_details.clone(),
     )
     .await?;
-
-    //TODO: send notification to the client
-    //TODO: Need to send events to client only if the post is marked as published
 
     Ok(())
 }
@@ -105,6 +109,7 @@ async fn update_metadata_impl_v2(
 async fn upload_video_canister(
     ic_admin_agent: &ic_agent::Agent,
     events_service: &EventService,
+    notification_client: &NotificationClient,
     post_details: PostDetailsFromFrontendV1,
 ) -> Result<(), Box<dyn Error>> {
     let user_post_service_canister = UserPostService(USER_POST_SERVICE_ID, ic_admin_agent);
@@ -124,7 +129,7 @@ async fn upload_video_canister(
                         post_details.hashtags.len(),
                         false,
                         true,
-                        post_details.id,
+                        post_details.id.clone(),
                         post_details.creator_principal,
                         USER_INFO_SERVICE_ID.into(),
                         String::new(),
@@ -135,6 +140,22 @@ async fn upload_video_canister(
                         log::error!("Failed to send video_upload_successful event: {}", e);
                     });
             }
+
+            let notification_payload = if post_is_published {
+                NotificationType::VideoPublished {
+                    user_principal: post_details.creator_principal,
+                    post_id: post_details.id.clone(),
+                }
+            } else {
+                NotificationType::VideoUploadedToDraft {
+                    user_principal: post_details.creator_principal,
+                    post_id: post_details.id.clone(),
+                }
+            };
+
+            notification_client
+                .send_notification(notification_payload, post_details.creator_principal)
+                .await;
 
             Ok(())
         }

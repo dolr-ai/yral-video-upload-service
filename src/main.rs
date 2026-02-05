@@ -54,12 +54,16 @@ async fn main() {
         storj_client: Arc::new(
             StorjInterface::new("https://storj-interface.yral.com".to_string()).unwrap(),
         ),
-        //TODO: add OFFCHAIN_EVENTS_API_TOKEN to env variables and use it here
         events_service: EventService::with_auth_token(
             env::var("OFFCHAIN_EVENTS_API_TOKEN").unwrap(),
         ),
         ic_admin_agent: ic_admin_agent,
+        notification_client: NotificationClient::new(
+            env::var("YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN").unwrap(),
+        ),
     };
+
+    //TODO: add an endpoin to mark post as published
 
     let app = Router::new()
         .route("/get-upload-url", get(get_upload_url))

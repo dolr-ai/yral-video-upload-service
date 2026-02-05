@@ -12,4 +12,5 @@ pub struct AppState {
     pub storj_client: Arc<StorjInterface>,
     pub ic_admin_agent: Agent,
     pub events_service: EventService,
+    pub notification_client: NotificationClient,
 }
