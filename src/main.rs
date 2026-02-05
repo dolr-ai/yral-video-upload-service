@@ -1,14 +1,17 @@
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
 use axum::{
     Router,
     routing::{get, post},
 };
-use reqwest::Identity;
 
 use crate::{
-    api::get_upload_url::get_upload_url, app_state::AppState,
-    utils::storj_interface::StorjInterface,
+    api::get_upload_url::get_upload_url,
+    app_state::AppState,
+    utils::{
+        events_interface::EventService, notification_client::NotificationClient,
+        storj_interface::StorjInterface,
+    },
 };
 
 pub mod api;
@@ -17,6 +20,7 @@ pub mod utils;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     let ic_admin_identity = {
         #[cfg(feature = "ic-admin")]
         {
@@ -49,6 +53,10 @@ async fn main() {
     let app_state = AppState {
         storj_client: Arc::new(
             StorjInterface::new("https://storj-interface.yral.com".to_string()).unwrap(),
+        ),
+        //TODO: add OFFCHAIN_EVENTS_API_TOKEN to env variables and use it here
+        events_service: EventService::with_auth_token(
+            env::var("OFFCHAIN_EVENTS_API_TOKEN").unwrap(),
         ),
         ic_admin_agent: ic_admin_agent,
     };

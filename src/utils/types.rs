@@ -32,6 +32,25 @@ impl<T: Serialize> IntoResponse for ApiResponse<T> {
     }
 }
 
+impl<T: Serialize> From<Result<T, Box<dyn Error>>> for ApiResponse<T> {
+    fn from(result: Result<T, Box<dyn Error>>) -> Self {
+        match result {
+            Ok(data) => ApiResponse {
+                success: true,
+                data: Some(data),
+                error_message: None,
+                status_code: 200,
+            },
+            Err(e) => ApiResponse {
+                success: false,
+                data: None,
+                error_message: Some(e.to_string()),
+                status_code: 400,
+            },
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DelegatedIdentityWire {
     /// raw bytes of delegated identity's public key

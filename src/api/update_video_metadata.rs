@@ -4,15 +4,18 @@ use axum::{Json, extract::State};
 use ic_agent::{Identity, identity::DelegatedIdentity};
 use serde::Deserialize;
 use yral_canisters_client::{
-    ic::{self, USER_POST_SERVICE_ID},
+    ic::{USER_INFO_SERVICE_ID, USER_POST_SERVICE_ID},
     user_post_service::{
-        PostDetailsFromFrontend, PostDetailsFromFrontendV1, Result_, UserPostService,
+        PostDetailsFromFrontendV1, PostStatus, PostStatusFromFrontend, Result_, UserPostService,
     },
 };
+use yral_types::post;
 
 use crate::{
-    app_state::{self, AppState},
+    app_state::AppState,
     utils::{
+        events_interface::EventService,
+        notification_client,
         storj_interface::StorjInterface,
         types::{ApiResponse, DelegatedIdentityWire, RequestPostDetails},
     },
@@ -26,7 +29,14 @@ pub async fn update_video_metadata(
 ) -> ApiResponse<()> {
     //TODO: send event
     //TODO: send notification
-    match update_metadata_impl_v2(&app_state.ic_admin_agent, &app_state.storj_client, req).await {
+    match update_metadata_impl_v2(
+        &app_state.ic_admin_agent,
+        &app_state.storj_client,
+        &app_state.events_service,
+        req,
+    )
+    .await
+    {
         Ok(_) => ApiResponse {
             success: true,
             data: Some(()),
@@ -53,6 +63,7 @@ pub struct UpdateMetadataRequest {
 async fn update_metadata_impl_v2(
     ic_admin_agent: &ic_agent::Agent,
     storj_interface: &StorjInterface,
+    events_service: &EventService,
     mut req_data: UpdateMetadataRequest,
 ) -> Result<(), Box<dyn Error>> {
     let delegated_identity = DelegatedIdentity::try_from(req_data.delegated_identity_wire.clone())?;
@@ -78,27 +89,74 @@ async fn update_metadata_impl_v2(
         )
         .await?;
 
-    upload_video_canister(ic_admin_agent, req_data.post_details.clone()).await?;
+    upload_video_canister(
+        ic_admin_agent,
+        events_service,
+        req_data.post_details.clone(),
+    )
+    .await?;
 
     //TODO: send notification to the client
+    //TODO: Need to send events to client only if the post is marked as published
 
     Ok(())
 }
 
 async fn upload_video_canister(
     ic_admin_agent: &ic_agent::Agent,
+    events_service: &EventService,
     post_details: PostDetailsFromFrontendV1,
 ) -> Result<(), Box<dyn Error>> {
     let user_post_service_canister = UserPostService(USER_POST_SERVICE_ID, ic_admin_agent);
 
+    let post_is_published = matches!(post_details.status, PostStatusFromFrontend::Published);
+
     let upload_to_canister_res = user_post_service_canister
-        .add_post_v_1(post_details)
+        .add_post_v_1(post_details.clone())
         .await?;
 
     match upload_to_canister_res {
-        Result_::Ok => Ok(()),
+        Result_::Ok => {
+            if post_is_published {
+                let _ = events_service
+                    .send_video_upload_successful_event(
+                        post_details.video_uid,
+                        post_details.hashtags.len(),
+                        false,
+                        true,
+                        post_details.id,
+                        post_details.creator_principal,
+                        USER_INFO_SERVICE_ID.into(),
+                        String::new(),
+                        None,
+                    )
+                    .await
+                    .inspect_err(|e| {
+                        log::error!("Failed to send video_upload_successful event: {}", e);
+                    });
+            }
+
+            Ok(())
+        }
         Result_::Err(user_post_service_error) => {
-            Err(format!("Canister error: {:?}", user_post_service_error).into())
+            let error = format!("Canister error: {:?}", user_post_service_error);
+
+            let _ = events_service
+                .send_video_event_unsuccessful(
+                    error.clone(),
+                    post_details.hashtags.len(),
+                    false,
+                    true,
+                    post_details.creator_principal,
+                    String::new(),
+                    USER_INFO_SERVICE_ID.into(),
+                )
+                .await
+                .inspect_err(|e| {
+                    log::error!("Failed to send video_event_unsuccessful event: {}", e)
+                });
+
+            Err(error.into())
         }
     }
 }
