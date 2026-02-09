@@ -7,14 +7,122 @@ use ic_agent::identity::{DelegatedIdentity, Secp256k1Identity, SignedDelegation}
 use k256::elliptic_curve::JwkEcKey;
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use yral_canisters_client::user_post_service::{PostDetailsFromFrontendV1, PostStatusFromFrontend};
+
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("Invalid principal: {0}")]
+    InvalidPrincipal(String),
+
+    #[error("Failed to fetch user profile: {0}")]
+    UserProfileFetchError(String),
+
+    #[error("User not found")]
+    UserNotFound,
+
+    #[error("Storage error: {0}")]
+    StorageError(String),
+
+    #[error("Internal server error: {0}")]
+    InternalError(String),
+
+    #[error("Agent error: {0}")]
+    AgentError(String),
+
+    #[error("Invalid delegated identity: {0}")]
+    InvalidDelegatedIdentity(String),
+
+    #[error("Post not found: {0}")]
+    PostNotFound(String),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
+    #[error("Canister error: {0}")]
+    CanisterError(String),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+}
+
+impl From<ic_agent::agent::AgentError> for AppError {
+    fn from(error: ic_agent::agent::AgentError) -> Self {
+        AppError::AgentError(error.to_string())
+    }
+}
+
+impl From<candid::error::Error> for AppError {
+    fn from(error: candid::error::Error) -> Self {
+        AppError::InvalidPrincipal(error.to_string())
+    }
+}
+
+impl From<candid::types::principal::PrincipalError> for AppError {
+    fn from(error: candid::types::principal::PrincipalError) -> Self {
+        AppError::InvalidPrincipal(error.to_string())
+    }
+}
+
+impl From<Box<dyn Error>> for AppError {
+    fn from(error: Box<dyn Error>) -> Self {
+        AppError::InternalError(error.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(error: serde_json::Error) -> Self {
+        AppError::SerializationError(error.to_string())
+    }
+}
+
+impl AppError {
+    pub fn status_code(&self) -> u16 {
+        match self {
+            AppError::InvalidPrincipal(_) => 400,
+            AppError::UserProfileFetchError(_) => 400,
+            AppError::UserNotFound => 404,
+            AppError::StorageError(_) => 503,
+            AppError::InternalError(_) => 500,
+            AppError::AgentError(_) => 502,
+            AppError::InvalidDelegatedIdentity(_) => 400,
+            AppError::PostNotFound(_) => 404,
+            AppError::Unauthorized(_) => 403,
+            AppError::CanisterError(_) => 502,
+            AppError::SerializationError(_) => 500,
+        }
+    }
+
+    pub fn to_api_response<T>(&self) -> ApiResponse<T> {
+        ApiResponse {
+            success: false,
+            data: None,
+            error_message: Some(self.to_string()),
+            status_code: self.status_code(),
+        }
+    }
+}
+
+impl<T: Serialize> From<Result<T, AppError>> for ApiResponse<T> {
+    fn from(result: Result<T, AppError>) -> Self {
+        match result {
+            Ok(data) => ApiResponse {
+                success: true,
+                data: Some(data),
+                error_message: None,
+                status_code: 200,
+            },
+            Err(e) => e.to_api_response(),
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub data: Option<T>,
     pub error_message: Option<String>,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     pub status_code: u16,
 }
 

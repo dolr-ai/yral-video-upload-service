@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Router,
@@ -14,70 +14,103 @@ use crate::{
     },
 };
 
+use std::env;
+
 pub mod api;
 pub mod app_state;
 pub mod utils;
 
-#[tokio::main]
-async fn main() {
-    env_logger::init();
-    let ic_admin_identity = {
-        #[cfg(feature = "ic-admin")]
-        {
-            use ic_agent::identity::Secp256k1Identity;
-            use k256::Secp256k1;
+fn main() {
+    let _guard = sentry::init((
+        "https://5f10027ca345020d4382f7acbedeac3e@apm.yral.com/18",
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            send_default_pii: true,
+            ..Default::default()
+        },
+    ));
 
-            let private_key = k256::SecretKey::from_be_bytes(
-                &hex::decode(std::env::var("IC_ADMIN_PRIVATE_KEY")).unwrap(),
-            )
-            .unwrap();
-            let pem = Secp256k1Identity::from_private_key(private_key);
-            pem.unwrap()
-        }
-        #[cfg(not(feature = "ic-admin"))]
-        {
-            use ic_agent::identity::BasicIdentity;
-
-            let private_key =
-                k256::SecretKey::random(&mut k256::elliptic_curve::rand_core::OsRng).to_bytes();
-            BasicIdentity::from_raw_key(private_key.as_slice().try_into().unwrap())
-        }
-    };
-
-    let ic_admin_agent = ic_agent::Agent::builder()
-        .with_identity(ic_admin_identity)
-        .with_url("https://ic0.app")
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
         .build()
-        .unwrap();
+        .unwrap()
+        .block_on(async {
+            env_logger::init();
+            let ic_admin_identity = {
+                #[cfg(not(feature = "local"))]
+                {
+                    use ic_agent::identity::Secp256k1Identity;
 
-    let app_state = AppState {
-        storj_client: Arc::new(
-            StorjInterface::new("https://storj-interface.yral.com".to_string()).unwrap(),
-        ),
-        events_service: EventService::with_auth_token(
-            env::var("OFFCHAIN_EVENTS_API_TOKEN").unwrap(),
-        ),
-        ic_admin_agent: ic_admin_agent,
-        notification_client: NotificationClient::new(
-            env::var("YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN").unwrap(),
-        ),
-    };
+                    let private_key_bytes =
+                        hex::decode(std::env::var("IC_ADMIN_PRIVATE_KEY").unwrap()).unwrap();
+                    let private_key = k256::SecretKey::from_slice(&private_key_bytes).unwrap();
+                    let pem = Secp256k1Identity::from_private_key(private_key);
+                    pem
+                }
+                #[cfg(feature = "local")]
+                {
+                    use ic_agent::identity::BasicIdentity;
 
-    //TODO: add an endpoin to mark post as published
+                    let private_key =
+                        k256::SecretKey::random(&mut k256::elliptic_curve::rand_core::OsRng)
+                            .to_bytes();
+                    BasicIdentity::from_raw_key(private_key.as_slice().try_into().unwrap())
+                }
+            };
 
-    let app = Router::new()
-        .route("/get-upload-url", get(get_upload_url))
-        .route(
-            "/update-video-metadata",
-            post(api::update_video_metadata::update_video_metadata),
-        )
-        .route(
-            "/mark-post-as-published",
-            post(api::mark_post_as_published::mark_post_as_published),
-        )
-        .with_state(app_state);
+            let ic_admin_agent = ic_agent::Agent::builder()
+                .with_identity(ic_admin_identity)
+                .with_url("https://ic0.app")
+                .build()
+                .unwrap();
 
-    let listner = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+            let event_service = {
+                #[cfg(feature = "local")]
+                {
+                    EventService::with_auth_token("test".to_owned())
+                }
+                #[cfg(not(feature = "local"))]
+                {
+                    EventService::with_auth_token(env::var("OFFCHAIN_EVENTS_API_TOKEN").unwrap())
+                }
+            };
 
-    axum::serve(listner, app).await.unwrap();
+            let notification_client = {
+                #[cfg(feature = "local")]
+                {
+                    NotificationClient::new("test".to_string())
+                }
+                #[cfg(not(feature = "local"))]
+                {
+                    NotificationClient::new(
+                        env::var("YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN").unwrap(),
+                    )
+                }
+            };
+
+            let app_state = AppState {
+                storj_client: Arc::new(
+                    StorjInterface::new("https://storj-interface.yral.com".to_string()).unwrap(),
+                ),
+                events_service: event_service,
+                ic_admin_agent: ic_admin_agent,
+                notification_client: notification_client,
+            };
+
+            let app = Router::new()
+                .route("/get-upload-url", get(get_upload_url))
+                .route(
+                    "/update-video-metadata",
+                    post(api::update_video_metadata::update_video_metadata),
+                )
+                .route(
+                    "/mark-post-as-published",
+                    post(api::mark_post_as_published::mark_post_as_published),
+                )
+                .with_state(app_state);
+
+            let listner = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+
+            axum::serve(listner, app).await.unwrap();
+        });
 }

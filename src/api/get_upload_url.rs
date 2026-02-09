@@ -4,14 +4,15 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use yral_canisters_client::{
     ic::USER_INFO_SERVICE_ID,
-    user_info_service::{
-        Result6 as UserCanisterProfileResult, UserInfoService, UserProfileDetailsForFrontendV6,
-    },
+    user_info_service::{Result6 as UserCanisterProfileResult, UserInfoService},
 };
 
 use crate::{
     app_state::AppState,
-    utils::{storj_interface::StorjInterface, types::ApiResponse},
+    utils::{
+        storj_interface::StorjInterface,
+        types::{ApiResponse, AppError},
+    },
 };
 
 #[derive(Serialize, Deserialize)]
@@ -42,7 +43,7 @@ async fn get_upload_url_impl(
     ic_admin_agent: &ic_agent::Agent,
     storj_client: &StorjInterface,
     req_data: GetUploadUrlReq,
-) -> Result<GetUploadUrlResp, Box<dyn std::error::Error>> {
+) -> Result<GetUploadUrlResp, AppError> {
     let new_video_id = Uuid::new_v4();
 
     let user_principal = Principal::from_text(req_data.publisher_user_id.clone())?;
@@ -51,20 +52,15 @@ async fn get_upload_url_impl(
 
     let profile_details_res = user_info_service
         .get_user_profile_details_v_6(user_principal)
-        .await
-        .map_err(|e| {
-            <std::string::String as Into<Box<dyn std::error::Error>>>::into(e.to_string())
-        })?;
+        .await?;
 
     let _profile_details = match profile_details_res {
-        UserCanisterProfileResult::Ok(profile_details) => {
-            Ok::<UserProfileDetailsForFrontendV6, Box<dyn std::error::Error>>(profile_details)
-        }
+        UserCanisterProfileResult::Ok(profile_details) => profile_details,
         UserCanisterProfileResult::Err(e) => {
             log::error!("Failed to fetch user profile details: {}", e);
-            return Err("Failed to fetch user profile details".into());
+            return Err(AppError::UserProfileFetchError(e));
         }
-    }?;
+    };
 
     let result = storj_client.get_upload_url(
         &new_video_id.to_string(),

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error};
+use std::collections::HashMap;
 
 use axum::{Json, extract::State};
 use ic_agent::{Identity, identity::DelegatedIdentity};
@@ -16,7 +16,7 @@ use crate::{
         events_interface::EventService,
         notification_client::{NotificationClient, NotificationType},
         storj_interface::StorjInterface,
-        types::{ApiResponse, DelegatedIdentityWire, RequestPostDetails},
+        types::{ApiResponse, AppError, DelegatedIdentityWire, RequestPostDetails},
     },
 };
 
@@ -26,28 +26,16 @@ pub async fn update_video_metadata(
     State(app_state): State<AppState>,
     Json(req): Json<UpdateMetadataRequest>,
 ) -> ApiResponse<()> {
-    match update_metadata_impl(
+    let result = update_metadata_impl(
         &app_state.ic_admin_agent,
         &app_state.storj_client,
         &app_state.events_service,
         &app_state.notification_client,
         req,
     )
-    .await
-    {
-        Ok(_) => ApiResponse {
-            success: true,
-            data: Some(()),
-            error_message: None,
-            status_code: 200,
-        },
-        Err(e) => ApiResponse {
-            success: false,
-            data: None,
-            error_message: Some(e.to_string()),
-            status_code: 500,
-        },
-    }
+    .await;
+
+    ApiResponse::from(result)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -64,15 +52,21 @@ async fn update_metadata_impl(
     events_service: &EventService,
     notification_client: &NotificationClient,
     mut req_data: UpdateMetadataRequest,
-) -> Result<(), Box<dyn Error>> {
-    let delegated_identity = DelegatedIdentity::try_from(req_data.delegated_identity_wire.clone())?;
+) -> Result<(), AppError> {
+    let delegated_identity = DelegatedIdentity::try_from(req_data.delegated_identity_wire.clone())
+        .map_err(|e| AppError::InvalidDelegatedIdentity(e.to_string()))?;
 
     //TODO: we not using delegated identity for storj upload or canister upload we could get away with a signature that is signed by this Delegated Identity.
 
-    let publisher_user_id = delegated_identity.sender()?.to_text();
+    let publisher_user_id = delegated_identity
+        .sender()
+        .map_err(|e| AppError::InvalidDelegatedIdentity(e))?
+        .to_text();
 
     if !publisher_user_id.eq(&req_data.post_details.creator_principal.to_text()) {
-        return Err("Publisher user id does not match creator principal in post details".into());
+        return Err(AppError::Unauthorized(
+            "Publisher user id does not match creator principal in post details".to_string(),
+        ));
     }
 
     req_data.meta.insert(
@@ -90,7 +84,8 @@ async fn update_metadata_impl(
             false,
             req_data.meta.clone(),
         )
-        .await?;
+        .await
+        .map_err(|e| AppError::StorageError(e.to_string()))?;
 
     upload_video_canister(
         ic_admin_agent,
@@ -108,7 +103,7 @@ async fn upload_video_canister(
     events_service: &EventService,
     notification_client: &NotificationClient,
     post_details: PostDetailsFromFrontendV1,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), AppError> {
     let user_post_service_canister = UserPostService(USER_POST_SERVICE_ID, ic_admin_agent);
 
     let post_is_published = matches!(post_details.status, PostStatusFromFrontend::Published);
@@ -157,7 +152,7 @@ async fn upload_video_canister(
             Ok(())
         }
         Result_::Err(user_post_service_error) => {
-            let error = format!("Canister error: {:?}", user_post_service_error);
+            let error = format!("{:?}", user_post_service_error);
 
             let _ = events_service
                 .send_video_event_unsuccessful(
@@ -174,7 +169,7 @@ async fn upload_video_canister(
                     log::error!("Failed to send video_event_unsuccessful event: {}", e)
                 });
 
-            Err(error.into())
+            Err(AppError::CanisterError(error))
         }
     }
 }
