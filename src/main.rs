@@ -71,6 +71,10 @@ async fn main() {
             "/update-video-metadata",
             post(api::update_video_metadata::update_video_metadata),
         )
+        .route(
+            "/mark-post-as-published",
+            post(api::mark_post_as_published::mark_post_as_published),
+        )
         .with_state(app_state);
 
     let listner = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();

@@ -6,16 +6,15 @@ use serde::Deserialize;
 use yral_canisters_client::{
     ic::{USER_INFO_SERVICE_ID, USER_POST_SERVICE_ID},
     user_post_service::{
-        PostDetailsFromFrontendV1, PostStatus, PostStatusFromFrontend, Result_, UserPostService,
+        PostDetailsFromFrontendV1, PostStatusFromFrontend, Result_, UserPostService,
     },
 };
-use yral_types::post;
 
 use crate::{
     app_state::AppState,
     utils::{
         events_interface::EventService,
-        notification_client::{self, NotificationClient, NotificationType},
+        notification_client::{NotificationClient, NotificationType},
         storj_interface::StorjInterface,
         types::{ApiResponse, DelegatedIdentityWire, RequestPostDetails},
     },
@@ -27,8 +26,6 @@ pub async fn update_video_metadata(
     State(app_state): State<AppState>,
     Json(req): Json<UpdateMetadataRequest>,
 ) -> ApiResponse<()> {
-    //TODO: send event
-    //TODO: send notification
     match update_metadata_impl(
         &app_state.ic_admin_agent,
         &app_state.storj_client,
