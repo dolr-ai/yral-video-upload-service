@@ -21,14 +21,22 @@ pub mod app_state;
 pub mod utils;
 
 fn main() {
-    let _guard = sentry::init((
-        "https://5f10027ca345020d4382f7acbedeac3e@apm.yral.com/18",
-        sentry::ClientOptions {
-            release: sentry::release_name!(),
-            send_default_pii: true,
-            ..Default::default()
-        },
-    ));
+
+    #[cfg(not(feature = "local"))]
+    let _guard = {
+        let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "production".to_string());
+        Some(sentry::init((
+            "https://5f10027ca345020d4382f7acbedeac3e@apm.yral.com/18",
+            sentry::ClientOptions {
+                release: sentry::release_name!(),
+                send_default_pii: true,
+                environment: Some(app_env.clone().into()),
+                ..Default::default()
+            },
+        )))
+    };
+    #[cfg(feature = "local")]
+    let _guard = None;
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

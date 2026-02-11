@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  yral-video-upload-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yral-video-upload-service
+    ports:
+      - "3000:3000"
+    environment:
+      # Required environment variables
+      - IC_ADMIN_PRIVATE_KEY=${IC_ADMIN_PRIVATE_KEY}
+      - OFFCHAIN_EVENTS_API_TOKEN=${OFFCHAIN_EVENTS_API_TOKEN}
+      - YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN=${YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN}
+      - APP_ENV=${APP_ENV}
+      # Optional: Logging configuration
+      - RUST_LOG=${RUST_LOG:-info}
+      # Optional: Sentry configuration (already hardcoded in main.rs)
+      # Add more as needed
+    restart: unless-stopped
+    networks:
+      - yral-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/get-upload-url"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  yral-network:
+    driver: bridge
