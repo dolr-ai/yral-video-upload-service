@@ -3,6 +3,10 @@ use std::collections::HashMap;
 use axum::{Json, extract::State};
 use ic_agent::{Identity, identity::DelegatedIdentity};
 use serde::Deserialize;
+use utoipa::{
+    PartialSchema, ToSchema,
+    openapi::{ArrayBuilder, ObjectBuilder, schema::Object},
+};
 use yral_canisters_client::{
     ic::{USER_INFO_SERVICE_ID, USER_POST_SERVICE_ID},
     user_post_service::{
@@ -16,12 +20,22 @@ use crate::{
         events_interface::EventService,
         notification_client::{NotificationClient, NotificationType},
         storj_interface::StorjInterface,
-        types::{ApiResponse, AppError, DelegatedIdentityWire, RequestPostDetails},
+        types::{ApiResponse, AppError, DelegatedIdentityWire, EmptyResp, RequestPostDetails},
     },
 };
 
 pub static POST_DETAILS_KEY: &str = "post_details";
 
+#[utoipa::path(
+    post,
+    path = "/update-video-metadata",
+    request_body = UpdateMetadataRequest,
+    responses(
+        (status = 200, description = "Metadata updated successfully", body = ApiResponse<EmptyResp>),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn update_video_metadata(
     State(app_state): State<AppState>,
     Json(req): Json<UpdateMetadataRequest>,
@@ -44,6 +58,56 @@ pub struct UpdateMetadataRequest {
     pub delegated_identity_wire: DelegatedIdentityWire,
     pub meta: HashMap<String, String>,
     pub post_details: PostDetailsFromFrontendV1,
+}
+
+impl ToSchema for UpdateMetadataRequest {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("UpdateMetadataRequest")
+    }
+}
+
+impl PartialSchema for UpdateMetadataRequest {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::ObjectBuilder::new()
+            .property(
+                "video_uid",
+                ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String),
+            )
+            .property("delegated_identity_wire", DelegatedIdentityWire::schema())
+            .property(
+                "meta",
+                ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::Object),
+            )
+            .property(
+                "post_details",
+                ObjectBuilder::new()
+                    .property(
+                        "id",
+                        ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String),
+                    )
+                    .property(
+                        "video_uid",
+                        ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String),
+                    )
+                    .property(
+                        "creator_principal",
+                        ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String),
+                    )
+                    .property(
+                        "title",
+                        ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String),
+                    )
+                    .property(
+                        "description",
+                        ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String),
+                    )
+                    .property(
+                        "hashtags",
+                        ArrayBuilder::new().schema_type(utoipa::openapi::schema::Type::String),
+                    ),
+            )
+            .into()
+    }
 }
 
 async fn update_metadata_impl(

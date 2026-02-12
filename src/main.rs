@@ -4,6 +4,8 @@ use axum::{
     Router,
     routing::{get, post},
 };
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     api::get_upload_url::get_upload_url,
@@ -13,6 +15,27 @@ use crate::{
         storj_interface::StorjInterface,
     },
 };
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        api::get_upload_url::get_upload_url,
+        api::update_video_metadata::update_video_metadata,
+        api::mark_post_as_published::mark_post_as_published,
+    ),
+    components(
+        schemas(
+            api::get_upload_url::GetUploadUrlReq,
+            api::get_upload_url::GetUploadUrlResp,
+            api::update_video_metadata::UpdateMetadataRequest,
+            api::mark_post_as_published::MarkPostAsPublishedRequest,
+            utils::types::DelegatedIdentityWire,
+        )
+    ),
+    tags(
+        (name = "video-upload-service", description = "Yral Video Upload Service API")
+    )
+)]
+struct ApiDoc;
 
 use std::env;
 
@@ -34,8 +57,6 @@ fn main() {
             },
         )))
     };
-    #[cfg(feature = "local")]
-    let _guard = None;
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -117,6 +138,7 @@ fn main() {
                     "/mark-post-as-published",
                     post(api::mark_post_as_published::mark_post_as_published),
                 )
+                .merge(SwaggerUi::new("/swagger").url("/api-doc/openapi.json", ApiDoc::openapi()))
                 .with_state(app_state);
 
             let listner = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();

@@ -1,6 +1,7 @@
 use axum::{Json, extract::State};
 use candid::Principal;
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use yral_canisters_client::{
     ic::USER_INFO_SERVICE_ID,
@@ -15,17 +16,29 @@ use crate::{
     },
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct GetUploadUrlReq {
+    #[schema(example = "123e4567-e89b-12d3-a456-426614174000")]
     pub video_id: String,
+    #[schema(example = "principal-id-string")]
     pub publisher_user_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct GetUploadUrlResp {
+    #[schema(example = "https://upload.url/path")]
     pub upload_url: String,
 }
 
+/// Get a signed upload URL for a video
+#[utoipa::path(
+    post,
+    path = "/get-upload-url",
+    request_body = GetUploadUrlReq,
+    responses(
+        (status = 200, description = "Upload URL", body = ApiResponse<GetUploadUrlResp>)
+    )
+)]
 pub async fn get_upload_url(
     State(app_state): State<AppState>,
     Json(req): Json<GetUploadUrlReq>,

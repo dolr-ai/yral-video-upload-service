@@ -8,6 +8,9 @@ use k256::elliptic_curve::JwkEcKey;
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use utoipa::openapi::schema::{self};
+use utoipa::openapi::{ArrayBuilder, Object, ObjectBuilder};
+use utoipa::{PartialSchema, ToSchema};
 use yral_canisters_client::user_post_service::{PostDetailsFromFrontendV1, PostStatusFromFrontend};
 
 #[derive(Error, Debug)]
@@ -117,7 +120,10 @@ impl<T: Serialize> From<Result<T, AppError>> for ApiResponse<T> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct EmptyResp {}
+
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub data: Option<T>,
@@ -169,6 +175,51 @@ pub struct DelegatedIdentityWire {
     /// Proof of delegation
     /// connecting from_key to `to_secret`
     pub delegation_chain: Vec<SignedDelegation>,
+}
+
+impl ToSchema for DelegatedIdentityWire {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("DelegatedIdentityWire")
+    }
+}
+
+impl PartialSchema for DelegatedIdentityWire {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::ObjectBuilder::new()
+            .property(
+                "from_key",
+                ArrayBuilder::new()
+                    .items(Object::with_type(schema::Type::Number))
+                    .description("Raw bytes of the delegated identity's public key. This is the key that is being delegated from.".into())
+            )
+            .property(
+                "to_secret",
+                utoipa::openapi::Schema::Object(
+                    ObjectBuilder::new()
+                        .property(
+                            "kty",
+                            ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String)
+                        )
+                        .property(
+                            "crv",
+                            ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String)
+                        )
+                        .property(
+                            "d",
+                            ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String)
+                        )
+                        .description("JWK(JSON Web Key) encoded Secp256k1 secret key of the identity allowed to sign on behalf of `from_key`.".into())
+                        .into()
+                )
+            )
+            .property(
+                "delegation_chain",
+                ObjectBuilder::new()
+                    .schema_type(utoipa::openapi::schema::Type::Array)
+                    .description("Proof of delegation connecting `from_key` to `to_secret`.".into())
+            )
+            .into()
+    }
 }
 
 impl std::fmt::Debug for DelegatedIdentityWire {
