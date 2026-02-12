@@ -135,7 +135,7 @@ fn main() {
             };
 
             let app = Router::new()
-                .route("/get-upload-url", get(get_upload_url))
+                .route("/get-upload-url", post(get_upload_url))
                 .route(
                     "/update-video-metadata",
                     post(api::update_video_metadata::update_video_metadata),

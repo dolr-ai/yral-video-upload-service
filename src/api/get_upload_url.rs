@@ -30,7 +30,7 @@ pub struct GetUploadUrlResp {
 
 /// Get a signed upload URL for a video
 #[utoipa::path(
-    get,
+    post,
     path = "/get-upload-url",
     request_body = GetUploadUrlReq,
     responses(
