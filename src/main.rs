@@ -21,7 +21,6 @@ pub mod app_state;
 pub mod utils;
 
 fn main() {
-
     #[cfg(not(feature = "local"))]
     let _guard = {
         let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "production".to_string());
@@ -48,11 +47,14 @@ fn main() {
                 #[cfg(not(feature = "local"))]
                 {
                     use ic_agent::identity::Secp256k1Identity;
+                    let private_key = env::var("IC_ADMIN_PRIVATE_KEY")
+                        .expect("IC_ADMIN_PRIVATE_KEY must be set in environment variables");
 
-                    let private_key_bytes =
-                        hex::decode(std::env::var("IC_ADMIN_PRIVATE_KEY").unwrap()).unwrap();
-                    let private_key = k256::SecretKey::from_slice(&private_key_bytes).unwrap();
-                    let pem = Secp256k1Identity::from_private_key(private_key);
+                    let pem = Secp256k1Identity::from_pem(stringreader::StringReader::new(
+                        private_key.as_str(),
+                    ))
+                    .unwrap();
+
                     pem
                 }
                 #[cfg(feature = "local")]

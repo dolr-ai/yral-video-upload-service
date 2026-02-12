@@ -16,6 +16,7 @@ reqwest = { version  = "0.12.26", features = ["json"] }
 sentry = "0.46.2"
 serde = "1.0.228"
 serde_json = "1.0.145"
+stringreader = "0.1.1"
 thiserror = "2.0.18"
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "tokio-macros"] }
 utoipa = "5.4.0"
