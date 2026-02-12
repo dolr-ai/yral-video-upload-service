@@ -18,8 +18,6 @@ use crate::{
 
 #[derive(Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct GetUploadUrlReq {
-    #[schema(example = "123e4567-e89b-12d3-a456-426614174000")]
-    pub video_id: String,
     #[schema(example = "principal-id-string")]
     pub publisher_user_id: String,
 }
