@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   yral-video-upload-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/dolr-ai/yral-video-upload-service:latest
     container_name: yral-video-upload-service
     ports:
       - "3000:3000"
