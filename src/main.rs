@@ -43,6 +43,10 @@ pub mod api;
 pub mod app_state;
 pub mod utils;
 
+async fn health_check() -> &'static str {
+    "ok"
+}
+
 fn main() {
     #[cfg(not(feature = "local"))]
     let _guard = {
@@ -138,6 +142,7 @@ fn main() {
                     "/mark-post-as-published",
                     post(api::mark_post_as_published::mark_post_as_published),
                 )
+                .route("/health", get(health_check))
                 .merge(SwaggerUi::new("/swagger").url("/api-doc/openapi.json", ApiDoc::openapi()))
                 .with_state(app_state);
 
