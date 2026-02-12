@@ -1,0 +1,14 @@
+target/
+.git/
+.gitignore
+*.md
+.env
+.env.*
+Dockerfile
+docker-compose.yml
+.dockerignore
+flake.nix
+flake.lock
+.direnv/
+result
+*.log

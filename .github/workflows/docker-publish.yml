@@ -1,0 +1,101 @@
+name: Build, Push and Deploy
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_BARE_METAL_GITHUB_ACTIONS_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.YRAL_VIDEO_UPLOAD_DEV_SERVER_IP_ADDR }} >> ~/.ssh/known_hosts
+      - name: Deploy to server
+        env:
+          SERVER_IP: ${{ secrets.YRAL_VIDEO_UPLOAD_DEV_SERVER_IP_ADDR }}
+          IC_ADMIN_PRIVATE_KEY: ${{ secrets.DOLR_AI_SNS_PROPOSAL_SUBMISSION_IDENTITY_PRIVATE_KEY }}
+          OFFCHAIN_EVENTS_API_TOKEN: ${{ secrets.OFFCHAIN_EVENTS_API_TOKEN }}
+          YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN: ${{ secrets.YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN }}
+          RUST_LOG: ${{ secrets.RUST_LOG }}
+          APP_ENV: production
+        run: |
+          # Copy files to server
+          scp -i ~/.ssh/deploy_key docker-compose.yml root@${SERVER_IP}:~/yral-video-upload-service/
+
+          # Deploy on server
+          ssh -i ~/.ssh/deploy_key root@${SERVER_IP} << ENDSSH
+            cd ~/yral-video-upload-service
+            export IC_ADMIN_PRIVATE_KEY='${IC_ADMIN_PRIVATE_KEY}'
+            export OFFCHAIN_EVENTS_API_TOKEN='${OFFCHAIN_EVENTS_API_TOKEN}'
+            export YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN='${YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN}'
+            export RUST_LOG='${RUST_LOG}'
+            export APP_ENV='${APP_ENV}'
+
+            docker pull ghcr.io/dolr-ai/yral-video-upload-service:latest
+
+            if docker compose ps | grep -q "Up"; then
+              echo "Services are running, restarting with new configuration..."
+              docker compose down
+              docker compose up -d
+            else
+              echo "Starting services..."
+              docker compose up -d
+            fi
+
+            docker compose ps
+          ENDSSH
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
