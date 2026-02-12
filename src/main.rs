@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use axum::{
-    Router,
+    Json, Router,
     routing::{get, post},
 };
+use serde_json::json;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -42,9 +43,8 @@ use std::env;
 pub mod api;
 pub mod app_state;
 pub mod utils;
-
-async fn health_check() -> &'static str {
-    "ok"
+async fn health_check() -> Json<serde_json::Value> {
+    json!({ "status": "ok" }).into()
 }
 
 fn main() {
@@ -84,7 +84,9 @@ fn main() {
                 }
                 #[cfg(feature = "local")]
                 {
+                    use axum::Json;
                     use ic_agent::identity::BasicIdentity;
+                    use serde_json::json;
 
                     let private_key =
                         k256::SecretKey::random(&mut k256::elliptic_curve::rand_core::OsRng)
@@ -143,11 +145,10 @@ fn main() {
                     post(api::mark_post_as_published::mark_post_as_published),
                 )
                 .route("/health", get(health_check))
-                .merge(SwaggerUi::new("/swagger").url("/api-doc/openapi.json", ApiDoc::openapi()))
+                .merge(SwaggerUi::new("/explore").url("/api-doc/openapi.json", ApiDoc::openapi()))
                 .with_state(app_state);
 
             let listner = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-
             axum::serve(listner, app).await.unwrap();
         });
 }
