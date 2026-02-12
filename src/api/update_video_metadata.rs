@@ -5,7 +5,7 @@ use ic_agent::{Identity, identity::DelegatedIdentity};
 use serde::Deserialize;
 use utoipa::{
     PartialSchema, ToSchema,
-    openapi::{ArrayBuilder, ObjectBuilder, schema::Object},
+    openapi::{ArrayBuilder, ObjectBuilder},
 };
 use yral_canisters_client::{
     ic::{USER_INFO_SERVICE_ID, USER_POST_SERVICE_ID},
@@ -54,7 +54,6 @@ pub async fn update_video_metadata(
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateMetadataRequest {
-    pub video_uid: String,
     pub delegated_identity_wire: DelegatedIdentityWire,
     pub meta: HashMap<String, String>,
     pub post_details: PostDetailsFromFrontendV1,
@@ -69,10 +68,6 @@ impl ToSchema for UpdateMetadataRequest {
 impl PartialSchema for UpdateMetadataRequest {
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
         utoipa::openapi::ObjectBuilder::new()
-            .property(
-                "video_uid",
-                ObjectBuilder::new().schema_type(utoipa::openapi::schema::Type::String),
-            )
             .property("delegated_identity_wire", DelegatedIdentityWire::schema())
             .property(
                 "meta",
@@ -143,7 +138,7 @@ async fn update_metadata_impl(
     // Finalize Storj upload with metadata (without delegated-identity)
     storj_interface
         .finalize_upload(
-            &req_data.video_uid,
+            &req_data.post_details.id,
             &publisher_user_id,
             false,
             req_data.meta.clone(),

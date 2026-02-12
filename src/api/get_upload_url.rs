@@ -26,6 +26,8 @@ pub struct GetUploadUrlReq {
 pub struct GetUploadUrlResp {
     #[schema(example = "https://upload.url/path")]
     pub upload_url: String,
+    #[schema(example = "video-uuid-string")]
+    pub video_id: String,
 }
 
 /// Get a signed upload URL for a video
@@ -79,5 +81,8 @@ async fn get_upload_url_impl(
         false,
     );
 
-    Ok(GetUploadUrlResp { upload_url: result })
+    Ok(GetUploadUrlResp {
+        upload_url: result,
+        video_id: new_video_id.to_string(),
+    })
 }
