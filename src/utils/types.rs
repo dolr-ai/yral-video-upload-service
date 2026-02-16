@@ -288,7 +288,7 @@ mod tests {
     };
     use rand::rngs::StdRng;
 
-    fn create_delegaged_identity_wire(
+    fn create_delegated_identity_wire(
         from_key: impl Identity,
         to_key: SecretKey,
     ) -> DelegatedIdentityWire {
@@ -338,13 +338,13 @@ mod tests {
         let to_key = Secp256k1Identity::from_private_key(to_secret_key.clone());
 
         let from_delegated_identity_wire =
-            create_delegaged_identity_wire(main_key, from_secret_key);
+            create_delegated_identity_wire(main_key, from_secret_key);
 
         let delegated_identity = DelegatedIdentity::try_from(from_delegated_identity_wire.clone())
             .expect("Failed to create delegated identity from wire format");
 
         let to_key_delegated_identity_wire =
-            create_delegaged_identity_wire(delegated_identity, to_secret_key);
+            create_delegated_identity_wire(delegated_identity, to_secret_key);
 
         let to_key_delegated_identity =
             DelegatedIdentity::try_from(to_key_delegated_identity_wire.clone())
