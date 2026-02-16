@@ -278,15 +278,9 @@ mod tests {
     use super::*;
     use ic_agent::{
         Identity,
-        agent::signed,
         identity::{DelegatedIdentity, Delegation, SignedDelegation},
     };
-    use k256::{
-        SecretKey,
-        elliptic_curve::{JwkEcKey, rand_core::OsRng},
-        pkcs8::EncodePublicKey,
-    };
-    use rand::rngs::StdRng;
+    use k256::{SecretKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePublicKey};
 
     fn create_delegated_identity_wire(
         from_key: impl Identity,
@@ -334,8 +328,6 @@ mod tests {
         let to_secret_key = SecretKey::random(&mut OsRng);
 
         let main_key = Secp256k1Identity::from_private_key(from_main_secret_key);
-        let from_key = Secp256k1Identity::from_private_key(from_secret_key.clone());
-        let to_key = Secp256k1Identity::from_private_key(to_secret_key.clone());
 
         let from_delegated_identity_wire =
             create_delegated_identity_wire(main_key, from_secret_key);
@@ -346,7 +338,7 @@ mod tests {
         let to_key_delegated_identity_wire =
             create_delegated_identity_wire(delegated_identity, to_secret_key);
 
-        let to_key_delegated_identity =
+        let _to_key_delegated_identity =
             DelegatedIdentity::try_from(to_key_delegated_identity_wire.clone())
                 .expect("Failed to create delegated identity from wire format");
     }

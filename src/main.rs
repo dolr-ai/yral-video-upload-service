@@ -38,8 +38,6 @@ use crate::{
 )]
 struct ApiDoc;
 
-use std::env;
-
 pub mod api;
 pub mod app_state;
 pub mod utils;
@@ -84,14 +82,13 @@ fn main() {
                 }
                 #[cfg(feature = "local")]
                 {
-                    use axum::Json;
                     use ic_agent::identity::BasicIdentity;
-                    use serde_json::json;
 
                     let private_key =
                         k256::SecretKey::random(&mut k256::elliptic_curve::rand_core::OsRng)
                             .to_bytes();
-                    BasicIdentity::from_raw_key(private_key.as_slice().try_into().unwrap())
+                    let private_key_array: [u8; 32] = private_key.into();
+                    BasicIdentity::from_raw_key(&private_key_array)
                 }
             };
 
