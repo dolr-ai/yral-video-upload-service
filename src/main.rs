@@ -70,7 +70,7 @@ fn main() {
                 #[cfg(not(feature = "local"))]
                 {
                     use ic_agent::identity::Secp256k1Identity;
-                    let private_key = env::var("IC_ADMIN_PRIVATE_KEY")
+                    let private_key = std::env::var("IC_ADMIN_PRIVATE_KEY")
                         .expect("IC_ADMIN_PRIVATE_KEY must be set in environment variables");
 
                     let pem = Secp256k1Identity::from_pem(stringreader::StringReader::new(
@@ -105,7 +105,9 @@ fn main() {
                 }
                 #[cfg(not(feature = "local"))]
                 {
-                    EventService::with_auth_token(env::var("OFFCHAIN_EVENTS_API_TOKEN").unwrap())
+                    EventService::with_auth_token(
+                        std::env::var("OFFCHAIN_EVENTS_API_TOKEN").unwrap(),
+                    )
                 }
             };
 
@@ -117,7 +119,7 @@ fn main() {
                 #[cfg(not(feature = "local"))]
                 {
                     NotificationClient::new(
-                        env::var("YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN").unwrap(),
+                        std::env::var("YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN").unwrap(),
                     )
                 }
             };
