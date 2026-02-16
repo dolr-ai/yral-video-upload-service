@@ -1,6 +1,5 @@
 use axum::{Json, extract::State};
 use ic_agent::{Identity, identity::DelegatedIdentity};
-use rand::distr::slice::Empty;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use yral_canisters_client::{

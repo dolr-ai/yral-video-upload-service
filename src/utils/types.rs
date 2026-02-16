@@ -1,12 +1,12 @@
-use std::error::Error;
-
 use axum::body::Body;
 use axum::response::{IntoResponse, Response};
 use candid::Principal;
-use ic_agent::identity::{DelegatedIdentity, Secp256k1Identity, SignedDelegation};
+use ic_agent::identity::SignedDelegation;
+use ic_agent::identity::{DelegatedIdentity, Secp256k1Identity};
 use k256::elliptic_curve::JwkEcKey;
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use thiserror::Error;
 use utoipa::openapi::schema::{self};
 use utoipa::openapi::{ArrayBuilder, Object, ObjectBuilder};
@@ -165,7 +165,7 @@ impl<T: Serialize> From<Result<T, Box<dyn Error>>> for ApiResponse<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DelegatedIdentityWire {
     /// raw bytes of delegated identity's public key
     pub from_key: Vec<u8>,
@@ -222,12 +222,6 @@ impl PartialSchema for DelegatedIdentityWire {
     }
 }
 
-impl std::fmt::Debug for DelegatedIdentityWire {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DelegatedIdentityWire").finish()
-    }
-}
-
 impl TryFrom<DelegatedIdentityWire> for DelegatedIdentity {
     type Error = Box<dyn Error>;
 
@@ -274,5 +268,78 @@ impl From<RequestPostDetails> for PostDetailsFromFrontendV1 {
             creator_principal: value.creator_principal,
             status: PostStatusFromFrontend::Draft,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+    use ic_agent::{
+        Identity,
+        identity::{DelegatedIdentity, Delegation, SignedDelegation},
+    };
+    use k256::{SecretKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePublicKey};
+
+    fn create_delegated_identity_wire(
+        from_key: impl Identity,
+        to_key: SecretKey,
+    ) -> DelegatedIdentityWire {
+        let delegation = Delegation {
+            pubkey: to_key
+                .public_key()
+                .to_public_key_der()
+                .unwrap()
+                .as_bytes()
+                .to_vec(),
+            expiration: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 3600, // valid for 1 hour
+            targets: None,
+        };
+
+        let delegation_signature = from_key
+            .sign_delegation(&delegation)
+            .expect("Failed to sign delegation");
+
+        let signed_delegation = SignedDelegation {
+            delegation,
+            signature: delegation_signature.signature.unwrap(),
+        };
+
+        let mut delegation_chain = delegation_signature.delegations.unwrap_or_default();
+
+        delegation_chain.push(signed_delegation);
+
+        DelegatedIdentityWire {
+            from_key: from_key.public_key().unwrap(),
+            to_secret: to_key.to_jwk(),
+            delegation_chain,
+        }
+    }
+
+    #[test]
+    fn test_valid_delegated_identity_wire() {
+        let from_main_secret_key = SecretKey::random(&mut OsRng);
+        let from_secret_key = SecretKey::random(&mut OsRng);
+        let to_secret_key = SecretKey::random(&mut OsRng);
+
+        let main_key = Secp256k1Identity::from_private_key(from_main_secret_key);
+
+        let from_delegated_identity_wire =
+            create_delegated_identity_wire(main_key, from_secret_key);
+
+        let delegated_identity = DelegatedIdentity::try_from(from_delegated_identity_wire.clone())
+            .expect("Failed to create delegated identity from wire format");
+
+        let to_key_delegated_identity_wire =
+            create_delegated_identity_wire(delegated_identity, to_secret_key);
+
+        let _to_key_delegated_identity =
+            DelegatedIdentity::try_from(to_key_delegated_identity_wire.clone())
+                .expect("Failed to create delegated identity from wire format");
     }
 }
