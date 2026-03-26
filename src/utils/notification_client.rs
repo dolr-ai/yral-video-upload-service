@@ -2,7 +2,6 @@ use std::fmt::Display;
 
 use candid::Principal;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 const METADATA_SERVER_URL: &str = "https://metadata.yral.com";
 
@@ -24,13 +23,19 @@ impl NotificationClient {
             user_principal.to_text()
         );
 
+        let title = data.to_string();
+        let notification = Notification {
+            notification: NotificationInfo {
+                title: title.clone(),
+                body: title,
+            },
+            data,
+        };
+
         let res = client
             .post(&url)
             .bearer_auth(&self.api_key)
-            .json(&json!({ "data": {
-                "title": data.to_string(),
-                "body": data.to_string(),
-            }}))
+            .json(&notification)
             .send()
             .await;
 
@@ -65,6 +70,19 @@ impl NotificationClient {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct NotificationInfo {
+    pub title: String,
+    pub body: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Notification {
+    pub notification: NotificationInfo,
+    pub data: NotificationType,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum NotificationType {
     VideoUploadedToDraft {
         user_principal: Principal,
