@@ -4,7 +4,7 @@ use candid::Principal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-const METADATA_SERVER_URL: &str = "https://yral-metadata.fly.dev";
+const METADATA_SERVER_URL: &str = "https://metadata.yral.com";
 
 #[derive(Clone, Debug)]
 pub struct NotificationClient {
