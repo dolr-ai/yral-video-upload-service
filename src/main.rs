@@ -59,6 +59,7 @@ fn main() {
                 release: sentry::release_name!(),
                 send_default_pii: true,
                 environment: Some(app_env.clone().into()),
+                traces_sample_rate: 1.0,
                 ..Default::default()
             },
         )))
