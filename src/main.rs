@@ -57,6 +57,7 @@ fn main() {
             "https://5f10027ca345020d4382f7acbedeac3e@apm.yral.com/18",
             sentry::ClientOptions {
                 release: sentry::release_name!(),
+                debug: true,
                 send_default_pii: true,
                 environment: Some(app_env.clone().into()),
                 traces_sample_rate: 1.0,
