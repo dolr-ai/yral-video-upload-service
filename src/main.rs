@@ -2,9 +2,13 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
+    body::Body,
+    http::Request,
     routing::{get, post},
 };
+use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
 use serde_json::json;
+use tower::ServiceBuilder;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -145,7 +149,12 @@ fn main() {
                 )
                 .route("/health", get(health_check))
                 .merge(SwaggerUi::new("/explore").url("/api-doc/openapi.json", ApiDoc::openapi()))
-                .with_state(app_state);
+                .with_state(app_state)
+                .layer(
+                    ServiceBuilder::new()
+                        .layer(NewSentryLayer::<Request<Body>>::new_from_top())
+                        .layer(SentryHttpLayer::new().enable_transaction()),
+                );
 
             let listner = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
             axum::serve(listner, app).await.unwrap();
