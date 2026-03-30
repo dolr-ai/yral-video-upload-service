@@ -26,8 +26,8 @@ impl NotificationClient {
         let title = data.to_string();
         let notification = Notification {
             notification: NotificationInfo {
-                title: title.clone(),
-                body: title,
+                title: title,
+                body: String::new(),
             },
             data,
         };
