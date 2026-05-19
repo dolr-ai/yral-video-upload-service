@@ -1,0 +1,247 @@
+name: Deploy Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  id-token: write
+  pull-requests: write
+  contents: read
+  packages: write
+  deployments: write
+
+jobs:
+  preview:
+    if: ${{ github.event.pull_request.state == 'open' }}
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: pr-${{ github.event.number }}-${{ github.event.repository.name }}
+      cancel-in-progress: true
+
+    environment:
+      name: pr-${{ github.event.number }}
+      url: ${{ steps.meta.outputs.preview_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute Preview Metadata
+        id: meta
+        run: |
+          PR_NUMBER=${{ github.event.number }}
+          REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+          IMAGE="ghcr.io/${{ github.repository_owner }}/${REPO_NAME}"
+          IMAGE_TAG="pr-${PR_NUMBER}"
+          PREVIEW_DOMAIN="pr-${PR_NUMBER}-${REPO_NAME}.preview.yral.com"
+          PREVIEW_URL="https://${PREVIEW_DOMAIN}"
+          APP_NAME="pr-${PR_NUMBER}-${REPO_NAME}"
+
+          echo "pr_number=${PR_NUMBER}"           >> $GITHUB_OUTPUT
+          echo "repo_name=${REPO_NAME}"           >> $GITHUB_OUTPUT
+          echo "image=${IMAGE}"                   >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}"           >> $GITHUB_OUTPUT
+          echo "preview_domain=${PREVIEW_DOMAIN}" >> $GITHUB_OUTPUT
+          echo "preview_url=${PREVIEW_URL}"       >> $GITHUB_OUTPUT
+          echo "app_name=${APP_NAME}"             >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.image_tag }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:cache-${{ steps.meta.outputs.image_tag }}
+          cache-to: type=registry,ref=${{ steps.meta.outputs.image }}:cache-${{ steps.meta.outputs.image_tag }},mode=max
+
+      - name: Create or Get Coolify Application
+        id: coolify_app
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          APP_NAME="${{ steps.meta.outputs.app_name }}"
+          IMAGE="${{ steps.meta.outputs.image }}"
+          IMAGE_TAG="${{ steps.meta.outputs.image_tag }}"
+          PREVIEW_DOMAIN="${{ steps.meta.outputs.preview_domain }}"
+
+          EXISTING=$(curl -s \
+            "https://coolify.yral.com/api/v1/applications" \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            | jq -r --arg name "$APP_NAME" '.[] | select(.name == $name) | .uuid // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Reusing existing Coolify app: $EXISTING"
+            echo "app_uuid=${EXISTING}" >> $GITHUB_OUTPUT
+          else
+            echo "Creating new Coolify app: $APP_NAME"
+
+            RESPONSE=$(curl -s -X POST \
+              "https://coolify.yral.com/api/v1/applications/dockerimage" \
+              -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"name\": \"${APP_NAME}\",
+                \"project_uuid\": \"${{ secrets.COOLIFY_PROJECT_UUID }}\",
+                \"server_uuid\": \"${{ secrets.COOLIFY_SERVER_UUID }}\",
+                \"environment_name\": \"preview\",
+                \"environment_uuid\": \"${{ secrets.COOLIFY_ENV_UUID }}\",
+                \"docker_registry_image_name\": \"${IMAGE}\",
+                \"docker_registry_image_tag\": \"${IMAGE_TAG}\",
+                \"domains\": \"https://${PREVIEW_DOMAIN}\",
+                \"ports_exposes\": \"3000\",
+                \"is_static\": false
+              }")
+
+            echo "Create response: $RESPONSE"
+
+            APP_UUID=$(echo $RESPONSE | jq -r '.uuid // empty')
+            if [ -z "$APP_UUID" ]; then
+              echo "Failed to create Coolify application"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            echo "app_uuid=${APP_UUID}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push Environment Variables
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          IC_ADMIN_PRIVATE_KEY: ${{ secrets.DOLR_AI_SNS_PROPOSAL_SUBMISSION_IDENTITY_PRIVATE_KEY }}
+          OFFCHAIN_EVENTS_API_TOKEN: ${{ secrets.OFFCHAIN_EVENTS_API_TOKEN }}
+          YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN: ${{ secrets.YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN }}
+        run: |
+          APP_UUID="${{ steps.coolify_app.outputs.app_uuid }}"
+
+          ENV_JSON=$(jq -n \
+            --arg ic_admin_private_key "$IC_ADMIN_PRIVATE_KEY" \
+            --arg offchain_events_api_token "$OFFCHAIN_EVENTS_API_TOKEN" \
+            --arg yral_metadata_notification_service_api_token "$YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN" \
+            '{
+              "data": [
+                {"key": "IC_ADMIN_PRIVATE_KEY", "value": $ic_admin_private_key, "is_multiline": true},
+                {"key": "OFFCHAIN_EVENTS_API_TOKEN", "value": $offchain_events_api_token, "is_literal": true},
+                {"key": "YRAL_METADATA_NOTIFICATION_SERVICE_API_TOKEN", "value": $yral_metadata_notification_service_api_token, "is_literal": true},
+                {"key": "APP_ENV", "value": "preview", "is_literal": true},
+                {"key": "RUST_LOG", "value": "info", "is_literal": true}
+              ]
+            }')
+
+          RESPONSE=$(curl -s -o /tmp/curl_response.txt -w "%{http_code}" -X PATCH \
+            "https://coolify.yral.com/api/v1/applications/${APP_UUID}/envs/bulk" \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "${ENV_JSON}")
+
+          if [ "$RESPONSE" -lt 200 ] || [ "$RESPONSE" -ge 300 ]; then
+            echo "Failed to push environment variables (HTTP $RESPONSE)"
+            cat /tmp/curl_response.txt
+            exit 1
+          fi
+
+      - name: Deploy
+        id: deploy
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          APP_UUID="${{ steps.coolify_app.outputs.app_uuid }}"
+
+          RESPONSE=$(curl -s -X POST \
+            "https://coolify.yral.com/api/v1/applications/${APP_UUID}/start" \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"uuid\": \"${APP_UUID}\", \"force\": true}")
+
+          echo "Deploy response: $RESPONSE"
+
+          DEPLOY_UUID=$(echo $RESPONSE | jq -r '.deployment_uuid // empty')
+          if [ -z "$DEPLOY_UUID" ]; then
+            echo "Failed to trigger deployment"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "deploy_uuid=${DEPLOY_UUID}" >> $GITHUB_OUTPUT
+
+      - name: Wait for Deployment
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          DEPLOY_UUID="${{ steps.deploy.outputs.deploy_uuid }}"
+          MAX_WAIT=300
+          WAITED=0
+
+          while [ $WAITED -lt $MAX_WAIT ]; do
+            STATUS=$(curl -s \
+              "https://coolify.yral.com/api/v1/deployments/${DEPLOY_UUID}" \
+              -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+              | jq -r '.status // empty')
+
+            echo "Status: ${STATUS} (${WAITED}s elapsed)"
+
+            if [ "$STATUS" = "finished" ]; then exit 0
+            elif [ "$STATUS" = "failed" ] || [ "$STATUS" = "error" ]; then exit 1
+            fi
+
+            sleep 10
+            WAITED=$((WAITED + 10))
+          done
+
+          echo "Timed out waiting for deployment"
+          exit 1
+
+      - name: Smoke Check
+        run: |
+          PREVIEW_URL="${{ steps.meta.outputs.preview_url }}"
+          STATUS_CODE=$(curl --silent --output /dev/null --write-out "%{http_code}" "${PREVIEW_URL}/health")
+          if [ "$STATUS_CODE" != "200" ]; then
+            echo "Health check failed: expected 200, got ${STATUS_CODE}"
+            exit 1
+          fi
+          echo "Health check passed"
+
+  destroy-preview:
+    if: ${{ github.event.pull_request.state == 'closed' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Compute Metadata
+        id: meta
+        run: |
+          PR_NUMBER=${{ github.event.number }}
+          REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+          APP_NAME="pr-${PR_NUMBER}-${REPO_NAME}"
+          echo "app_name=${APP_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Find and Delete Coolify Application
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          APP_NAME="${{ steps.meta.outputs.app_name }}"
+
+          APP_UUID=$(curl -s \
+            "https://coolify.yral.com/api/v1/applications" \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            | jq -r --arg name "$APP_NAME" '.[] | select(.name == $name) | .uuid // empty')
+
+          if [ -z "$APP_UUID" ]; then
+            echo "No app found for $APP_NAME — skipping"
+            exit 0
+          fi
+
+          echo "Deleting Coolify app $APP_NAME ($APP_UUID)"
+
+          curl -s -X DELETE \
+            "https://coolify.yral.com/api/v1/applications/${APP_UUID}" \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}"
