@@ -132,7 +132,7 @@ fn main() {
 
             let app_state = AppState {
                 storj_client: Arc::new(
-                    StorjInterface::new("https://storj-interface.yral.com".to_string()).unwrap(),
+                    StorjInterface::new("https://storage-interface.prakash.yral.com".to_string()).unwrap(),
                 ),
                 events_service: event_service,
                 ic_admin_agent: ic_admin_agent,

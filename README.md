@@ -31,7 +31,7 @@ V3 API for direct video uploads to Storj storage. Videos are immediately availab
   "message": null,
   "data": {
     "uid": "495873ac7b174011b3f9dffaec9c24ef",
-    "upload_url": "https://storj-interface.yral.com/duplicate_raw/upload?publisher_user_id=7lb6r-7touy-3rnnc-tihkp-aq33u-kfvwl-hb7ir-ugaie-ngani-xlxdp-6qe&video_id=495873ac7b174011b3f9dffaec9c24ef&is_nsfw=false",
+    "upload_url": "https://storage-interface.prakash.yral.com/duplicate_raw/upload?publisher_user_id=7lb6r-7touy-3rnnc-tihkp-aq33u-kfvwl-hb7ir-ugaie-ngani-xlxdp-6qe&video_id=495873ac7b174011b3f9dffaec9c24ef&is_nsfw=false",
     "scheduled_deletion": null,
     "watermark": null
   }
